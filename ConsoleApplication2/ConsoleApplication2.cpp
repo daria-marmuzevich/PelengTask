@@ -5,17 +5,66 @@
 #include <ctime>
 #include <queue>
 #include <thread>
+#include <sstream>
+#include <chrono>
+#include <format>
 using namespace std::chrono_literals;
 using namespace std;
+
+
+enum MessageType
+{
+    NOTHING = 0,
+    METAR = 1,
+    SPECI = 2,
+    AWOS = 3,
+    KN01 = 4,
+    TREND = 5,
+    AEROWARNING = 6,
+    WINDSHIFT = 7,
+    STATE = 8
+};
+
+
+struct FileRecord
+{
+    MessageType type;
+    int pointer;				// указатель на номер символа <1> последней записи в соответствующем файле
+    int message_num;			// это из группы N034, три последние цифры; 1000 переходит в 000 в самОй станции
+    std::string    time;		// DDHHMM - день месяца, час, минута
+    std::string    corr;		// группа исправленного сообщения, пока не обращать внимания
+    string      message;	// SPECI UMPL 110852Z 12004MPS 080V160 4700 OVC005 M00/M01 Q1012 R08/710160 TEMPO 1100 BR OVC003=
+
+    FileRecord()
+    {
+        Clear();
+    }
+public:
+    void Clear()
+    {
+        type = NOTHING;
+        pointer = 0;
+        message_num = 0;
+        time.clear();
+        corr.clear();
+        message.clear();
+    }
+
+    static void print(FileRecord m) {
+        cout << m.message << endl;
+        cout << m.time << endl;
+    }
+};
+
 
 class MeteoStation {
 
 public:
 
-    deque<string> speci_msgs;
-    deque<string> metar_msgs;
-    deque<string> kn01_msgs;
-    deque<string> awos_msgs;
+    deque<FileRecord> speci_msgs;
+    deque<FileRecord> metar_msgs;
+    deque<FileRecord> kn01_msgs;
+    deque<FileRecord> awos_msgs;
 
     string speci_file_name = "Send/speci.txt";
     string metar_file_name = "Send/metar.txt";
@@ -23,7 +72,7 @@ public:
     string awos_file_name = "Send/awos.txt";
 
 
-    int last_pos_speci;
+    int lastPosSpeci;
     int last_pos_metar;
     int last_pos_kn01;
     int last_pos_awos;
@@ -59,7 +108,7 @@ public:
       
         return pos3 - pos2 - 1 == len;    }
 
-    int find_reverse(istream& file, char b) {
+    int findReverse(istream& file, char b) {
         int fileSize = file.tellg();
 
         bool found = false;
@@ -94,7 +143,7 @@ public:
 
     }
  
-    deque<string>* find_deq(int priority) {
+    deque<FileRecord>* find_deq(int priority) {
         switch (priority) {
         case 1:
             return &speci_msgs;
@@ -126,10 +175,10 @@ public:
 
         // если нашли начало строки, то переместить указатель чтения на эту позицию
 
-        int pos3 = find_reverse(file, 3);
-        int pos2 = find_reverse(file, 2);
-        int pos_slash = find_reverse(file, '/');
-        int pos1 = find_reverse(file, 1);
+        int pos3 = findReverse(file, 3);
+        int pos2 = findReverse(file, 2);
+        int pos_slash = findReverse(file, '/');
+        int pos1 = findReverse(file, 1);
         if (pos3 != -1 && pos2 != -1 && pos_slash != -1 && pos1 != -1)
             file.seekg(pos1);
         else {
@@ -163,22 +212,22 @@ public:
 
 
     //функция для чтения сообщения с установленного указателя
-    string read_msg(ifstream& file, int file_size) {
+    string readMsg(ifstream& file, int file_size) {
         int cur_pos = file.tellg();
         int pos1 = find(file, 1);
         int pos_slash = find(file, '/');
         //pos_slash = find(file, '/');
 
-        char len_char[4];
-        file.read(len_char, 4);
-        int msg_len = getLength(len_char);
+        //char len_char[4];
+        //file.read(len_char, 4);
+        //int msg_len = getLength(len_char);
 
-        file.clear();
+        //file.clear();
         file.seekg(pos_slash + 4);
         int pos2 = find(file, 2);
-        file.seekg(pos2 + msg_len + 1);
+        //file.seekg(pos2 + msg_len + 1);
 
-        //проблема тройка в сообщении 
+         
         int pos3 = find(file, 3);
 
         if (pos3 != -1 && pos2 != -1 && pos_slash != -1 && pos1 != -1)
@@ -208,7 +257,7 @@ public:
     }
 
     //функция читает файл с заданной позиции пропуская первую строку
-    void read_msgs_from_file(ifstream& file, int priority) {
+    void readMsgsFromFile(ifstream& file, int priority) {
         int first_line_pos = file.tellg();
         file.seekg(0, ios::end);
         int file_size = file.tellg();
@@ -216,25 +265,30 @@ public:
 
         int pos_slash = find(file, '/');
         //pos_slash = find(file, '/');
-        char len_char[4];
+
+       /* char len_char[4];
         file.read(len_char, 4);
         int msg_len = getLength(len_char);
-        file.clear();
+        file.clear();*/
+
         file.seekg(pos_slash + 4);
         int pos2 = find(file, 2);
-        file.seekg(pos2 + msg_len + 1);
-        int end_first_line_pos = find(file, 3) + 1;
+        int pos3 = find(file, 3);
+        //file.seekg(pos2 + msg_len + 1);
+        //int end_first_line_pos = find(file, 3) + 1;
+        int end_first_line_pos = pos3 + 1;
 
         file.seekg(end_first_line_pos, ios::beg);
         while (end_first_line_pos < file_size) {
             //считываем сообщение 
             file.seekg(end_first_line_pos);
-            string msg = read_msg(file, file_size);
+            string msg = readMsg(file, file_size);
             if (!msg.empty()) {
                 
-                deque<string>* deq = find_deq(priority);
+                deque<FileRecord>* deq = find_deq(priority);
+
                 if (deq)
-                    deq->push_back(msg);
+                    deq->push_back(parseMsg(msg, priority));
                 else {
                     throw exception("No such priority");
                 }
@@ -247,51 +301,104 @@ public:
     }
 
 
-    string get_back_msg_from_deq(deque<string>& deq) {
-        if (deq.empty())
-            return "";
-        string msg = deq.back();
+    FileRecord getBackMsgFromDeq(deque<FileRecord>& deq) {
+        FileRecord msg = deq.back();
         deq.pop_back();
         return msg;
     }
 
 
-    string get_front_msg_from_deq(deque<string>& deq) {
-        if (deq.empty())
-            return "";
-        string msg = deq.front();
+    FileRecord getFrontMsgFromDeq(deque<FileRecord>& deq) {
+        FileRecord msg = deq.front();
         deq.pop_front();
         return msg;
     }
     
-    string GetNextRecord() {
-        string msg;
+    FileRecord GetNextRecord() {
+        FileRecord msg;
 
-        update_deque();
+        updateDeque();
 
 
 
         //достает последние записи
-        !speci_msgs.empty() && speci_msgs.size() == speci_deq_size ? msg = get_back_msg_from_deq(speci_msgs) :
-            (!metar_msgs.empty() && metar_msgs.size() == metar_deq_size ? msg = get_back_msg_from_deq(metar_msgs) :
-                (!kn01_msgs.empty() && kn01_msgs.size() == kn01_deq_size ? msg = get_back_msg_from_deq(kn01_msgs) :
-                    (!awos_msgs.empty() && awos_msgs.size() == awos_deq_size ? msg = get_back_msg_from_deq(awos_msgs) : msg = "")));
+        !speci_msgs.empty() && speci_msgs.size() == speci_deq_size ? msg = getBackMsgFromDeq(speci_msgs) :
+            (!metar_msgs.empty() && metar_msgs.size() == metar_deq_size ? msg = getBackMsgFromDeq(metar_msgs) :
+                (!kn01_msgs.empty() && kn01_msgs.size() == kn01_deq_size ? msg = getBackMsgFromDeq(kn01_msgs) :
+                    (!awos_msgs.empty() && awos_msgs.size() == awos_deq_size ? msg = getBackMsgFromDeq(awos_msgs) : msg )));
 
-        if (!msg.empty())
+        if (msg.type != MessageType::NOTHING) 
             return msg;
+        
 
 
         //достает из всех очередей по очереди
-        !speci_msgs.empty() ? msg = get_front_msg_from_deq(speci_msgs) :
-            (!metar_msgs.empty() ? msg = get_front_msg_from_deq(metar_msgs) :
-                (!kn01_msgs.empty() ? msg = get_front_msg_from_deq(kn01_msgs) : msg=""));
+        !speci_msgs.empty() ? msg = getFrontMsgFromDeq(speci_msgs) :
+            (!metar_msgs.empty() ? msg = getFrontMsgFromDeq(metar_msgs) :
+                (!kn01_msgs.empty() ? msg = getFrontMsgFromDeq(kn01_msgs) : msg));
 
+      
         return msg;
     }
 
-    
+    MessageType findMsgType(int priority) {
+        switch (priority) {
+        case 1:
+            return MessageType::SPECI;
+        case 2:
+            return MessageType::METAR;
+        case 3:
+            return MessageType::KN01;
+        case 4:
+            return MessageType::AWOS;
+        default:
+            return MessageType::NOTHING;
+        }
+    }
 
-    void start_module() {
+    int findLastPos(MessageType mt) {
+        switch (mt) {
+        case SPECI:
+            return lastPosSpeci;
+        case METAR:
+            return last_pos_metar;
+        case KN01:
+            return last_pos_kn01;
+        case AWOS:
+            return last_pos_awos;
+        default:
+            return -1;
+        }
+    }
+
+    string getBodyMsg(const string& msg) {
+        int pos2 = msg.find(2, 10);
+        return msg.substr(pos2 + 1, msg.length() - pos2 - 2);
+    }
+
+    int getMsgNum(const string& msg) {
+        int posN = msg.find('N');
+        return stoi(msg.substr(posN + 1, 3));
+
+    }
+
+    string getTime() {
+
+        auto const time = chrono::system_clock::now();
+        return format("{:%d%H%M}", time);
+    }
+
+    FileRecord parseMsg(const string& msg, int priority) {
+        FileRecord fRec;
+        fRec.type = findMsgType(priority);
+        fRec.pointer = findLastPos(fRec.type);
+        fRec.message_num = getMsgNum(msg);
+        fRec.time = getTime();
+        fRec.message = getBodyMsg(msg);
+        return fRec;
+    }
+
+    void startModule() {
       
         ifstream speci_file(speci_file_name, ios_base::binary);
         ifstream metar_file(metar_file_name, ios_base::binary);
@@ -303,7 +410,7 @@ public:
         kn01_file.seekg(0, ios::end);
         awos_file.seekg(0, ios::end);
 
-        last_pos_speci = setToLastLine(speci_file, 1, speci_file.tellg());
+        lastPosSpeci = setToLastLine(speci_file, 1, speci_file.tellg());
         last_pos_metar = setToLastLine(metar_file, 2, metar_file.tellg());
         last_pos_kn01 = setToLastLine(kn01_file, 3, kn01_file.tellg());
         last_pos_awos = setToLastLine(awos_file, 4, awos_file.tellg());
@@ -311,27 +418,29 @@ public:
     }
 
 
-    void update_deque() {
+    void updateDeque() {
 
         ifstream speci_file(speci_file_name, ios_base::binary);
         ifstream metar_file(metar_file_name, ios_base::binary);
         ifstream kn01_file(kn01_file_name, ios_base::binary);
         ifstream awos_file(awos_file_name, ios_base::binary);
 
-        speci_file.seekg(last_pos_speci, ios::beg);
+        speci_file.seekg(lastPosSpeci, ios::beg);
         metar_file.seekg(last_pos_metar, ios::beg);
         kn01_file.seekg(last_pos_kn01, ios::beg);
         awos_file.seekg(last_pos_awos, ios::beg);
 
-        read_msgs_from_file(speci_file, 1);
-        read_msgs_from_file(metar_file, 2);
-        read_msgs_from_file(kn01_file, 3);
-        read_msgs_from_file(awos_file, 4);
+        readMsgsFromFile(speci_file, 1);
+        readMsgsFromFile(metar_file, 2);
+        readMsgsFromFile(kn01_file, 3);
+        readMsgsFromFile(awos_file, 4);
 
-        update_pos_size(last_pos_speci, setToLastLine(speci_file, 1, speci_file.tellg()), speci_deq_size, speci_msgs);
-        update_pos_size(last_pos_metar, setToLastLine(metar_file, 2, metar_file.tellg()), metar_deq_size, metar_msgs);
-        update_pos_size(last_pos_kn01, setToLastLine(kn01_file, 3, kn01_file.tellg()), kn01_deq_size, kn01_msgs);
-        update_pos_size(last_pos_awos, setToLastLine(awos_file, 4, awos_file.tellg()), awos_deq_size, awos_msgs);
+        //найти время
+
+        UpdatePosSize(lastPosSpeci, setToLastLine(speci_file, 1, speci_file.tellg()), speci_deq_size, speci_msgs);
+        UpdatePosSize(last_pos_metar, setToLastLine(metar_file, 2, metar_file.tellg()), metar_deq_size, metar_msgs);
+        UpdatePosSize(last_pos_kn01, setToLastLine(kn01_file, 3, kn01_file.tellg()), kn01_deq_size, kn01_msgs);
+        UpdatePosSize(last_pos_awos, setToLastLine(awos_file, 4, awos_file.tellg()), awos_deq_size, awos_msgs);
 
         speci_file.close();
         metar_file.close();
@@ -340,7 +449,7 @@ public:
 
     }
 
-    void update_pos_size(int& last1, int last2, int& deq_size, deque<string>& deq) {
+    void UpdatePosSize(int& last1, int last2, int& deq_size, deque<FileRecord>& deq) {
         if (last1 != last2) {
             deq_size = deq.size();
             last1 = last2;
@@ -348,19 +457,7 @@ public:
         
     }
 
-    void send_msgs(const string &msg) {
-        cout << msg << endl;
-    }
-
-
-
-    void send_queu(deque<string> &msgs) {
-        while (!msgs.empty()) {
-            send_msgs(msgs.front());
-            msgs.pop_front();
-        }
-    }
-
+ 
  
 };
 
@@ -368,7 +465,7 @@ bool connection_to_server() {
     return true;
 }
 
-void SendToServer(const string& message) {
+void SendToServer(const FileRecord& message) {
     if (connection_to_server()) {
         // Send
     }
@@ -377,8 +474,15 @@ void SendToServer(const string& message) {
 
 int main() {
     MeteoStation ms;
- 
-    ms.start_module();
+
+    //ifstream f("speci.txt", ios_base::binary);
+    //f.seekg(0, ios::beg);
+    //ms.readMsgsFromFile(f,1);
+
+
+    //cout << "8888888888";
+
+    ms.startModule();
 
     cout << "start\n";
     this_thread::sleep_for(60s);
@@ -386,8 +490,9 @@ int main() {
 
     while (connection_to_server()) {
         auto messageToSend = ms.GetNextRecord();
-        if (!messageToSend.empty()) {
-            cout << messageToSend << endl;
+        if (messageToSend.type != MessageType :: NOTHING) {
+            FileRecord::print(messageToSend);
+
             SendToServer(messageToSend);
         }
 
@@ -395,7 +500,6 @@ int main() {
     }
         
     
-    cout << "jjik";
 
     return 0;
 }
